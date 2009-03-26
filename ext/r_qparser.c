@@ -31,6 +31,8 @@ extern Analyzer *frt_get_cwrapped_analyzer(VALUE ranalyzer);
 static void
 frt_qp_free(void *p)
 {
+    /* printf("freeing QP: %x\n", p);
+     */
     object_del(p);
     qp_destroy((QParser *)p);
 }

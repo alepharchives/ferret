@@ -557,6 +557,7 @@ SegmentInfo *si_new(char *name, int doc_cnt, Store *store)
     si->name = name;
     si->doc_cnt = doc_cnt;
     si->store = store;
+    REF(store);
     si->del_gen = -1;
     si->norm_gens = NULL;
     si->norm_gens_size = 0;
@@ -570,6 +571,7 @@ SegmentInfo *si_read(Store *store, InStream *is)
     SegmentInfo *volatile si = ALLOC_AND_ZERO(SegmentInfo);
     TRY
         si->store = store;
+        REF(store);
         si->name = is_read_string_safe(is);
         si->doc_cnt = is_read_vint(is);
         si->del_gen = is_read_vint(is);
@@ -585,6 +587,7 @@ SegmentInfo *si_read(Store *store, InStream *is)
         si->use_compound_file = (bool)is_read_byte(is);
     XCATCHALL
         free(si->name);
+        DEREF(si->store);
         free(si);
     XENDTRY
     return si;
@@ -610,6 +613,7 @@ void si_deref(SegmentInfo *si)
     if (--si->ref_cnt <= 0) {
         free(si->name);
         free(si->norm_gens);
+        DEREF(si->store);
         free(si);
     }
 }
@@ -1008,6 +1012,7 @@ void sis_destroy(SegmentInfos *sis)
     }
     if (sis->fis) fis_deref(sis->fis);
     free(sis->segs);
+    if (sis->store) DEREF(sis->store);
     free(sis);
 }
 
@@ -1066,6 +1071,7 @@ void sis_read_i(Store *store, FindSegmentsFile *fsf)
     TRY
         is = store->open_input(store, seg_file_name);
         sis->store = store;
+        REF(store);
 
         sis->generation = fsf->generation;
         sis->format = is_read_u32(is); /* do nothing. it's the first version */
@@ -1285,6 +1291,7 @@ FieldsReader *fr_open(Store *store, const char *segment, FieldInfos *fis)
     fdx_in = fr->fdx_in = store->open_input(store, file_name);
     fr->size = is_length(fdx_in) / FIELDS_IDX_PTR_SIZE;
     fr->store = store;
+    REF(store);
 
     return fr;
 }
@@ -1294,6 +1301,7 @@ FieldsReader *fr_clone(FieldsReader *orig)
     FieldsReader *fr = ALLOC(FieldsReader);
 
     memcpy(fr, orig, sizeof(FieldsReader));
+    REF(fr->store);
     fr->fdx_in = is_clone(orig->fdx_in);
     fr->fdt_in = is_clone(orig->fdt_in);
     
@@ -1304,6 +1312,7 @@ void fr_close(FieldsReader *fr)
 {
     is_close(fr->fdt_in);
     is_close(fr->fdx_in);
+    DEREF(fr->store);
     free(fr);
 }
 
@@ -3354,6 +3363,7 @@ Deleter *deleter_new(SegmentInfos *sis, Store *store)
     Deleter *dlr = ALLOC(Deleter);
     dlr->sis = sis;
     dlr->store = store;
+    REF(store);
     dlr->pending = hs_new_str(&free);
     return dlr;
 }
@@ -3361,6 +3371,7 @@ Deleter *deleter_new(SegmentInfos *sis, Store *store)
 void deleter_destroy(Deleter *dlr)
 {
     hs_destroy(dlr->pending);
+    DEREF(dlr->store);
     free(dlr);
 }
 
@@ -5119,6 +5130,7 @@ DocWriter *dw_open(IndexWriter *iw, SegmentInfo *si)
     dw->analyzer    = iw->analyzer;
     dw->fis         = iw->fis;
     dw->store       = store;
+    REF(store);
     dw->fw          = fw_open(store, si->name, iw->fis);
     dw->si          = si;
 
@@ -5157,6 +5169,7 @@ void dw_close(DocWriter *dw)
     h_destroy(dw->fields);
     mp_destroy(dw->mp);
     free(dw->offsets);
+    DEREF(dw->store);
     free(dw);
 }
 
@@ -5398,10 +5411,15 @@ static SegmentMergeInfo *smi_new(int base, Store *store, SegmentInfo *si)
     char *segment = si->name;
     smi->base = base;
     smi->si = si;
+    if (smi->orig_store) DEREF(smi->orig_store);
+    if (smi->store) DEREF(smi->store);
     smi->orig_store = smi->store = store;
+    REF(store);
+    REF(store);
     sprintf(file_name, "%s.cfs", segment);
     if (store->exists(store, file_name)) {
         smi->store = open_cmpd_store(store, file_name);
+        DEREF(store);
     }
 
 
@@ -5488,6 +5506,7 @@ static SegmentMerger *sm_create(IndexWriter *iw, SegmentInfo *si,
     int i;
     SegmentMerger *sm = ALLOC_AND_ZERO_N(SegmentMerger, seg_cnt);
     sm->store = iw->store;
+    REF(sm->store);
     sm->fis = iw->fis;
     sm->si = si;
     sm->doc_cnt = 0;
@@ -5509,6 +5528,7 @@ static void sm_destroy(SegmentMerger *sm)
     for (i = 0; i < seg_cnt; i++) {
         smi_destroy(sm->smis[i]);
     }
+    DEREF(sm->store);
     free(sm->smis);
     free(sm);
 }
@@ -6100,6 +6120,7 @@ IndexWriter *iw_open(Store *store, volatile Analyzer *analyzer,
     IndexWriter *iw = ALLOC_AND_ZERO(IndexWriter);
     mutex_init(&iw->mutex, NULL);
     iw->store = store;
+    REF(store);
     if (!config) {
         config = &default_config;
     }
@@ -6123,6 +6144,7 @@ IndexWriter *iw_open(Store *store, volatile Analyzer *analyzer,
         }
         if (iw->sis) sis_destroy(iw->sis);
         if (analyzer) a_deref((Analyzer *)analyzer);
+        DEREF(store);
         free(iw);
     XENDTRY
 
@@ -6133,7 +6155,6 @@ IndexWriter *iw_open(Store *store, volatile Analyzer *analyzer,
     iw->deleter = deleter_new(iw->sis, store);
     deleter_delete_deletable_files(iw->deleter);
 
-    REF(store);
     return iw;
 }
 

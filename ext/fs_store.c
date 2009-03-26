@@ -390,6 +390,7 @@ static Lock *fs_open_lock_i(Store *store, char *lockname)
     snprintf(lname, 100, "%s%s.lck", LOCK_PREFIX, lockname);
     lock->name = estrdup(join_path(path, store->dir.path, lname));
     lock->store = store;
+    REF(store);
     lock->obtain = &fs_lock_obtain;
     lock->release = &fs_lock_release;
     lock->is_locked = &fs_lock_is_locked;
@@ -400,6 +401,7 @@ static void fs_close_lock_i(Lock *lock)
 {
     remove(lock->name);
     free(lock->name);
+    DEREF(lock->store);
     free(lock);
 }
 

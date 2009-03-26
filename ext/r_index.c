@@ -1342,11 +1342,11 @@ frt_iw_init(int argc, VALUE *argv, VALUE self)
         if ((rval = rb_hash_aref(roptions, sym_dir)) != Qnil) {
             Check_Type(rval, T_DATA);
             store = DATA_PTR(rval);
+            REF(store);
         } else if ((rval = rb_hash_aref(roptions, sym_path)) != Qnil) {
             StringValue(rval);
             frt_create_dir(rval);
             store = open_fs_store(rs2s(rval));
-            DEREF(store);
         }
         
         /* Let ruby's garbage collector handle the closing of the store
@@ -1379,7 +1379,6 @@ frt_iw_init(int argc, VALUE *argv, VALUE self)
     }
     if (NULL == store) {
         store = open_ram_store();
-        DEREF(store);
     }
     if (!create && create_if_missing && !store->exists(store, "segments")) {
         create = true;
@@ -1398,6 +1397,7 @@ frt_iw_init(int argc, VALUE *argv, VALUE self)
     }
 
     iw = iw_open(store, analyzer, &config);
+    DEREF(store);
 
     Frt_Wrap_Struct(self, &frt_iw_mark, &frt_iw_free, iw);
 
@@ -2128,6 +2128,7 @@ frt_ir_init(VALUE self, VALUE rdir)
                         continue;
                     } else if (RTEST(rb_obj_is_kind_of(rdir, cDirectory))) {
                         store = DATA_PTR(rdir);
+                        REF(store);
                     } else {
                         rb_raise(rb_eArgError, "A Multi-IndexReader can only "
                                  "be created from other IndexReaders, "
@@ -2139,7 +2140,6 @@ frt_ir_init(VALUE self, VALUE rdir)
                 case T_STRING:
                     frt_create_dir(rdir);
                     store = open_fs_store(rs2s(rdir));
-                    DEREF(store);
                     break;
                 default:
                     rb_raise(rb_eArgError, "%s isn't a valid directory "
@@ -2156,11 +2156,11 @@ frt_ir_init(VALUE self, VALUE rdir)
         switch (TYPE(rdir)) {
             case T_DATA:
                 store = DATA_PTR(rdir);
+                REF(store);
                 break;
             case T_STRING:
                 frt_create_dir(rdir);
                 store = open_fs_store(rs2s(rdir));
-                DEREF(store);
                 break;
             default:
                 rb_raise(rb_eArgError, "%s isn't a valid directory argument. "
@@ -2171,6 +2171,7 @@ frt_ir_init(VALUE self, VALUE rdir)
         ir = ir_open(store);
         Frt_Wrap_Struct(self, &frt_ir_mark, &frt_ir_free, ir);
     }
+    if (store) DEREF(store);
     object_add(ir, self);
 
     fis = ir->fis;

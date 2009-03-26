@@ -223,6 +223,7 @@ Store *open_cmpd_store(Store *store, const char *name)
         cmpd = ALLOC_AND_ZERO(CompoundStore);
 
         cmpd->store       = store;
+        REF(store);
         cmpd->name        = name;
         cmpd->entries     = h_new_str(&free, &free);
         is = cmpd->stream = store->open_input(store, cmpd->name);
@@ -246,6 +247,7 @@ Store *open_cmpd_store(Store *store, const char *name)
     XCATCHALL
         if (is) is_close(is);
         if (cmpd->entries) h_destroy(cmpd->entries);
+        DEREF(cmpd->store);
         free(cmpd);
     XENDTRY
 
@@ -283,6 +285,7 @@ CompoundWriter *open_cw(Store *store, char *name)
 {
     CompoundWriter *cw = ALLOC(CompoundWriter);
     cw->store = store;
+    REF(store);
     cw->name = name;
     cw->ids = hs_new_str(&free);
     cw->file_entries = ary_new_type_capa(CWFileEntry, CW_INIT_CAPA);
@@ -379,5 +382,6 @@ void cw_close(CompoundWriter *cw)
 
     hs_destroy(cw->ids);
     ary_free(cw->file_entries);
+    DEREF(cw->store);
     free(cw);
 }

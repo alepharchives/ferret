@@ -168,6 +168,7 @@ static MatchVector *spanq_get_matchv_i(Query *self, MatchVector *mv,
         sp_enum->destroy(sp_enum);
         
         fis_deref(ir->fis);
+        DEREF(ir->store);
         free(ir);
 
         matchv_compact(full_mv);
