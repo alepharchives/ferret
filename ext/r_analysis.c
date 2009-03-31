@@ -56,6 +56,37 @@ frt_rb_hash_size(VALUE hash)
     return RHASH(hash)->tbl->num_entries;
 }
 
+/* rb_hash_delete yields to a block if one is on the call
+   stack. Yielding to an arbitrary block during garbage collection can
+   cause the dreaded "object allocation during garbage collection
+   BUG".  We there therfore need to delete entries from object space
+   using rb_hash_delete_key instead. so, expose this internal method
+   from hash.c */
+#define HASH_DELETED  FL_USER1
+
+static VALUE
+frt_rb_hash_delete_key(hash, key)
+    VALUE hash, key;
+{
+    st_data_t ktmp = (st_data_t)key, val;
+
+    if (RHASH(hash)->iter_lev > 0) {
+	if (st_delete_safe(RHASH(hash)->tbl, &ktmp, &val, Qundef)) {
+	    FL_SET(hash, HASH_DELETED);
+	    return (VALUE)val;
+	}
+    }
+    else if (st_delete(RHASH(hash)->tbl, &ktmp, &val))
+	return (VALUE)val;
+    return Qundef;
+}
+
+static void frt_delete_from_object_space(void* key)
+{
+  frt_rb_hash_delete_key(object_space, ((VALUE)key)|1);
+  /* printf("rb_hash_size = %d\n", frt_rb_hash_size(object_space)); */
+}
+
 /****************************************************************************
  *
  * Utility Methods
@@ -544,8 +575,7 @@ cwrts_destroy_i(TokenStream *ts)
     if (object_get(&ts->text) != Qnil) {
         object_del(&ts->text);
     }
-    rb_hash_delete(object_space, ((VALUE)ts)|1);
-    /*printf("rb_hash_size = %d\n", frt_rb_hash_size(object_space)); */
+    frt_delete_from_object_space(ts);
     free(ts);
 }
 
@@ -630,8 +660,8 @@ rets_destroy_i(TokenStream *ts)
     if (object_get(&ts->text) != Qnil) {
         object_del(&ts->text);
     }
-    rb_hash_delete(object_space, ((VALUE)ts)|1);
-    /*printf("rb_hash_size = %d\n", frt_rb_hash_size(object_space)); */
+
+    frt_delete_from_object_space(ts);
     free(ts);
 }
 
@@ -1138,8 +1168,7 @@ typedef struct CWrappedAnalyzer
 static void
 cwa_destroy_i(Analyzer *a)
 {
-    rb_hash_delete(object_space, ((VALUE)a)|1);
-    /*printf("rb_hash_size = %d\n", frt_rb_hash_size(object_space)); */
+    frt_delete_from_object_space(a);
     free(a);
 }
 
